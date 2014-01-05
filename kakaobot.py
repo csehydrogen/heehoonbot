@@ -79,7 +79,7 @@ def get_handshake():
 
 class Client():
 
-    def __init__(self,sKey,duuid,debug=False,timeout=3):
+    def __init__(self,sKey,duuid,debug=False,timeout=5):
         self.sKey = sKey
         self.duuid = duuid
         self.debug = debug
@@ -132,17 +132,17 @@ class Client():
             print '[S]',loc_to_dic(s_loc)
 
     def write(self,chat_id,msg):
-        s_loc = dic_to_loc(6,'WRITE',{u'chatId': chatId, u'msg': msg, u'extra': None,u'type': 1})
+        s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': None,u'type': 1})
         s_sec = loc_to_sec(s_loc)
         self.s.send(s_sec)
 
         if self.debug:
             print '[M]','WRITE'
             print '[S]',loc_to_dic(s_loc)
-            print '[W]',chatId,':',msg,'(',len(msg),')'
+            print '[W]',chat_id,':',msg,'(',len(msg),')'
 
-    def leave(self,chatId):
-        s_loc = dic_to_loc(6,'LEAVE',{u'chatId':chatId})
+    def leave(self,chat_id):
+        s_loc = dic_to_loc(6,'LEAVE',{u'chatId':chat_id})
         s_sec = loc_to_sec(s_loc)
         self.s.send(s_sec)
 
