@@ -79,11 +79,13 @@ def get_handshake():
 
 class Client():
 
-    def __init__(self,sKey,duuid,debug=False,timeout=5):
+    def __init__(self,sKey,duuid,debug=False,timeout=5,bot_id='',bot_nick=''):
         self.sKey = sKey
         self.duuid = duuid
         self.debug = debug
         self.timeout = timeout
+        self.bot_id=bot_id
+        self.bot_nick=bot_nick
 
     def recv(self):
         sec = self.s.recv(4)
@@ -95,6 +97,21 @@ class Client():
             sec += self.s.recv(struct.unpack('I',sec)[0])
             loc += sec_to_loc(sec)
             dic = loc_to_dic(loc)
+
+        if self.debug:
+            print '[M]','RECV'
+            print '[R]',dic
+
+        method_name = dic['methodName']
+        body = dic['body']
+        if method_name=='MSG':
+            chat_id = body['chatId']
+            nick = body['authorNickname']
+            chat_log = body['chatLog']
+            author_id = chat_log['authorId']
+            msg = chat_log['message']
+            print '[R]',nick,'(',author_id,')','in',chat_id,':',msg,'(',len(msg),')'
+
         return dic
 
     def checkin(self):
@@ -132,14 +149,25 @@ class Client():
             print '[S]',loc_to_dic(s_loc)
 
     def write(self,chat_id,msg):
-        s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': None,u'type': 1})
-        s_sec = loc_to_sec(s_loc)
-        self.s.send(s_sec)
+        while True:
+            tmp=''
+            if len(msg)>512:
+                tmp=msg[512:]
+                msg=msg[:512]
 
-        if self.debug:
-            print '[M]','WRITE'
-            print '[S]',loc_to_dic(s_loc)
-            print '[W]',chat_id,':',msg,'(',len(msg),')'
+            s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': None,u'type': 1})
+            s_sec = loc_to_sec(s_loc)
+            self.s.send(s_sec)
+
+            if self.debug:
+                print '[M]','WRITE'
+                print '[S]',loc_to_dic(s_loc)
+
+            print '[W]',self.bot_nick,'(',self.bot_id,')','in',chat_id,':',msg,'(',len(msg),')'
+
+            if len(tmp)==0:
+                break
+            msg=tmp
 
     def leave(self,chat_id):
         s_loc = dic_to_loc(6,'LEAVE',{u'chatId':chat_id})
