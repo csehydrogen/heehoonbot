@@ -148,14 +148,15 @@ class Client():
             print '[M]','LOGIN'
             print '[S]',loc_to_dic(s_loc)
 
-    def write(self,chat_id,msg):
+    def write(self,chat_id,msg,msgtype=1,extra=None):
         while True:
             tmp=''
-            if len(msg)>512:
-                tmp=msg[512:]
-                msg=msg[:512]
+            if len(msg)>1000:
+                tmp=msg[1000:]
+                msg=msg[:1000]
 
-            s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': None,u'type': 1})
+            s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': extra, u'type': msgtype})
+
             s_sec = loc_to_sec(s_loc)
             self.s.send(s_sec)
 
