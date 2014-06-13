@@ -6,7 +6,7 @@ import rsa # pip install rsa
 from Crypto.Cipher import AES # pip install pycrypto
 from bson import BSON # pip install pymongo
 
-app_ver = u'4.2.1'
+app_ver = u'4.4.2'
 os_type = u'android'
 aes_key = struct.pack('B',0)*16;
 aes_iv = 'locoforever'+struct.pack('B',0)*5;
@@ -15,9 +15,9 @@ rsa_e = 3
 loc_host = 'loco.kakao.com'
 loc_port = 8080
 
-def dic_to_loc(packet_id,method_name,body,status_code=0,body_type=0):
+def dic_to_loc(method_name,body,packet_id=0,status_code=0,body_type=0):
     ret=str()
-    ret+=struct.pack('I',packet_id) # 4B
+    ret+='\xFF\xFF\xFF\xFF' # 4B
     ret+=struct.pack('H',status_code) # 2B
     ret+=method_name+struct.pack('B',0)*(11-len(method_name)) # 11B
     ret+=struct.pack('B',body_type) # 1B
@@ -27,9 +27,15 @@ def dic_to_loc(packet_id,method_name,body,status_code=0,body_type=0):
     return ret
 
 def loc_to_sec(loc):
-    sec_body = enc_aes(loc)
-    sec_head = struct.pack('I',len(sec_body))
-    return sec_head+sec_body
+    ret = str()
+
+    while len(loc)!=0:
+        sec_body = enc_aes(loc[:2047])
+        sec_head = struct.pack('I',len(sec_body))
+        ret += sec_head+sec_body
+        loc = loc[2047:]
+
+    return ret
 
 def sec_to_loc(sec):
     return dec_aes(sec[4:])
@@ -88,23 +94,23 @@ class Client():
         self.bot_nick=bot_nick
 
     def recv(self):
+        loc = str()
         sec = self.s.recv(4)
         sec += self.s.recv(struct.unpack('I',sec)[0])
-        loc = sec_to_loc(sec)
-        dic = loc_to_dic(loc)
-        while 22+dic['bodyLength']>len(loc):
+        loc += sec_to_loc(sec)
+        while len(loc[22:])<struct.unpack('I',loc[18:22])[0]:
             sec = self.s.recv(4)
             sec += self.s.recv(struct.unpack('I',sec)[0])
             loc += sec_to_loc(sec)
-            dic = loc_to_dic(loc)
+        dic = loc_to_dic(loc)
 
         if self.debug:
             print '[M]','RECV'
             print '[R]',dic
 
         method_name = dic['methodName']
-        body = dic['body']
         if method_name=='MSG':
+            body = dic['body']
             chat_id = body['chatId']
             nick = body['authorNickname']
             chat_log = body['chatLog']
@@ -115,7 +121,7 @@ class Client():
         return dic
 
     def checkin(self):
-        s_loc = dic_to_loc(10002,'CHECKIN',{u'os': os_type})
+        s_loc = dic_to_loc('CHECKIN',{u'os': os_type})
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((loc_host,loc_port))
@@ -140,7 +146,7 @@ class Client():
     def login(self):
         self.checkin()
 
-        s_loc = dic_to_loc(20,'LOGIN',{u'appVer':app_ver,u'os':os_type,u'sKey':self.sKey,u'duuid':self.duuid})
+        s_loc = dic_to_loc('LOGIN',{u'appVer':app_ver,u'os':os_type,u'sKey':self.sKey,u'duuid':self.duuid})
         s_sec = loc_to_sec(s_loc)
         self.s.send(s_sec)
 
@@ -149,13 +155,15 @@ class Client():
             print '[S]',loc_to_dic(s_loc)
 
     def write(self,chat_id,msg,msgtype=1,extra=None):
-        while True:
-            tmp=''
-            if len(msg)>1000:
-                tmp=msg[1000:]
-                msg=msg[:1000]
+        if type(msg)==unicode:
+            unit = 333
+        else:
+            unit = 999
+        while len(msg)!=0:
+            cur_msg = msg[:unit]
+            msg = msg[unit:]
 
-            s_loc = dic_to_loc(6,'WRITE',{u'chatId': chat_id, u'msg': msg, u'extra': extra, u'type': msgtype})
+            s_loc = dic_to_loc('WRITE',{u'chatId': chat_id, u'msg': cur_msg, u'extra': extra, u'type': msgtype})
 
             s_sec = loc_to_sec(s_loc)
             self.s.send(s_sec)
@@ -164,14 +172,10 @@ class Client():
                 print '[M]','WRITE'
                 print '[S]',loc_to_dic(s_loc)
 
-            print '[W]',self.bot_nick,'(',self.bot_id,')','in',chat_id,':',msg,'(',len(msg),')'
-
-            if len(tmp)==0:
-                break
-            msg=tmp
+            print '[W]',self.bot_nick,'(',self.bot_id,')','in',chat_id,':',cur_msg,'(',len(cur_msg),')'
 
     def leave(self,chat_id):
-        s_loc = dic_to_loc(6,'LEAVE',{u'chatId':chat_id})
+        s_loc = dic_to_loc('LEAVE',{u'chatId':chat_id})
         s_sec = loc_to_sec(s_loc)
         self.s.send(s_sec)
 
