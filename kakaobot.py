@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import os
+import urllib2
 import socket
 import struct
 import rsa # pip install rsa
@@ -85,11 +87,10 @@ def get_handshake():
 
 class Client():
 
-    def __init__(self,sKey,duuid,debug=False,timeout=5,bot_id='',bot_nick=''):
+    def __init__(self,sKey,duuid,debug=False,bot_id=None,bot_nick=''):
         self.sKey = sKey
         self.duuid = duuid
         self.debug = debug
-        self.timeout = timeout
         self.bot_id=bot_id
         self.bot_nick=bot_nick
 
@@ -125,18 +126,18 @@ class Client():
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((loc_host,loc_port))
-        s.send(s_loc)
-        r_loc = s.recv(256)
+        s.sendall(s_loc)
+        r_loc = s.recv(22)
+        r_loc += s.recv(struct.unpack('I',r_loc[18:22])[0])
         s.close()
 
         r_dic = loc_to_dic(r_loc)
 
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.connect((r_dic['body']['host'],r_dic['body']['port']))
-        self.s.settimeout(self.timeout)
 
         h = get_handshake()
-        self.s.send(h)
+        self.s.sendall(h)
 
         if self.debug:
             print '[M]','CHECKIN'
@@ -148,25 +149,21 @@ class Client():
 
         s_loc = dic_to_loc('LOGIN',{u'appVer':app_ver,u'os':os_type,u'sKey':self.sKey,u'duuid':self.duuid})
         s_sec = loc_to_sec(s_loc)
-        self.s.send(s_sec)
+        self.s.sendall(s_sec)
 
         if self.debug:
             print '[M]','LOGIN'
             print '[S]',loc_to_dic(s_loc)
 
-    def write(self,chat_id,msg,msgtype=1,extra=None):
-        if type(msg)==unicode:
-            unit = 333
-        else:
-            unit = 999
+    def write(self,chat_id,msg):
+        unit=1000
         while len(msg)!=0:
             cur_msg = msg[:unit]
             msg = msg[unit:]
 
-            s_loc = dic_to_loc('WRITE',{u'chatId': chat_id, u'msg': cur_msg, u'extra': extra, u'type': msgtype})
-
+            s_loc = dic_to_loc('WRITE',{u'chatId': chat_id, u'msg': cur_msg, u'type': 1})
             s_sec = loc_to_sec(s_loc)
-            self.s.send(s_sec)
+            self.s.sendall(s_sec)
 
             if self.debug:
                 print '[M]','WRITE'
@@ -177,8 +174,66 @@ class Client():
     def leave(self,chat_id):
         s_loc = dic_to_loc('LEAVE',{u'chatId':chat_id})
         s_sec = loc_to_sec(s_loc)
-        self.s.send(s_sec)
+        self.s.sendall(s_sec)
 
         if self.debug:
             print '[M]','LEAVE'
             print '[S]',loc_to_dic(s_loc)
+
+    def write_image(self,chat_id,image_url,width=0,height=0):
+        extra = []
+        extra.append("'path':'%s'" % (image_url))
+        extra.append("'width':%d" % (width))
+        extra.append("'height':%d" % (height))
+        extra = "{%s}" % (",".join(extra))
+
+        s_loc = dic_to_loc('WRITE',{u'chatId':chat_id, u'extra':extra, u'type':2})
+        s_sec = loc_to_sec(s_loc)
+        self.s.sendall(s_sec)
+
+        if self.debug:
+            print '[M]','WRITE'
+            print '[S]',loc_to_dic(s_loc)
+
+        print '[W]',self.bot_nick,'(',self.bot_id,')','in',chat_id,':',image_url
+
+    def upload_image(self,image_url):
+        image_url = str(image_url)
+        image = urllib2.urlopen(image_url).read()
+
+        boundary = "pykakao--multipart--formdata--boundary"
+
+        body = []
+
+        body.append("--%s" % (boundary))
+        body.append("Content-Disposition: form-data; name='user_id'")
+        body.append("\r\n")
+        body.append(str(self.bot_id))
+
+        body.append("--%s" % (boundary))
+        body.append("Content-Disposition: form-data; name='attachment_type'")
+        body.append("")
+        body.append("image")
+
+        body.append("--%s" % (boundary))
+        body.append("Content-Disposition: form-data; name='attachment'; filename='%s'" % (os.path.basename(image_url)))
+        body.append("Content-Transfer-Encoding: binary")
+        body.append("Content-Length: %d" % len(image))
+        body.append("")
+        body.append(image)
+
+        body.append("--%s--" % (boundary))
+        body.append("")
+
+        body = "\r\n".join(body)
+
+        upload_url = "http://up-m.talk.kakao.com/upload"
+
+        headers = {}
+        headers["User-Agent"] = "KakaoTalk Win32 1.1.4"
+        headers["Content-Type"] = "multipart/form-data; boundary=%s" % (boundary)
+        headers["Content-Length"] = len(body)
+
+        response = urllib2.urlopen(urllib2.Request(upload_url, data=body, headers=headers))
+
+        return response.read() # url returned. pass it to write_image
